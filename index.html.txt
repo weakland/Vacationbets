@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
 
+<meta charset="UTF-8">
 <title>Vacation Prediction Market</title>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
 
@@ -26,7 +27,7 @@ margin-top:40px;
 background:#444654;
 padding:20px;
 border-radius:8px;
-margin-bottom:20px;
+margin-bottom:25px;
 }
 
 button{
@@ -37,9 +38,8 @@ border-radius:6px;
 cursor:pointer;
 }
 
-.yes{background:#16a34a}
-.no{background:#dc2626}
-.resolve{background:#3b82f6}
+.yes{background:#16a34a;color:white}
+.no{background:#dc2626;color:white}
 
 input{
 padding:10px;
@@ -47,21 +47,14 @@ border-radius:6px;
 border:none;
 }
 
-.wallet{
-background:#444654;
-padding:15px;
-border-radius:8px;
-margin-bottom:20px;
-}
-
-.leaderboard{
-background:#444654;
-padding:15px;
-border-radius:8px;
-margin-top:20px;
+canvas{
+margin-top:15px;
+background:#2f3037;
+border-radius:6px;
 }
 
 </style>
+
 </head>
 
 <body>
@@ -70,31 +63,14 @@ margin-top:20px;
 
 <h1>🏝 Vacation Prediction Market</h1>
 
-<div class="wallet">
-
-<input id="username" placeholder="Enter name">
-<button onclick="login()">Join</button>
-
-<p id="balance"></p>
-
-</div>
-
 <div>
 
 <input id="question" placeholder="Create a market">
-<button onclick="createMarket()">Create Market</button>
+<button onclick="createMarket()">Create</button>
 
 </div>
 
 <div id="markets"></div>
-
-<div class="leaderboard">
-
-<h3>Leaderboard</h3>
-
-<div id="leaders"></div>
-
-</div>
 
 </div>
 
@@ -107,50 +83,12 @@ const supabase = window.supabase.createClient(
 
 const b=20
 
-let currentUser=null
-
 function price(yes,no){
 
 let ey=Math.exp(yes/b)
 let en=Math.exp(no/b)
 
 return ey/(ey+en)
-
-}
-
-async function login(){
-
-let name=document.getElementById("username").value
-
-currentUser=name
-
-let {data}=await supabase
-.from("users")
-.select("*")
-.eq("name",name)
-
-if(data.length===0){
-
-await supabase
-.from("users")
-.insert([{name:name}])
-
-}
-
-loadWallet()
-
-}
-
-async function loadWallet(){
-
-let {data}=await supabase
-.from("users")
-.select("*")
-.eq("name",currentUser)
-.single()
-
-document.getElementById("balance").innerText=
-currentUser+" balance: $"+data.balance.toFixed(2)
 
 }
 
@@ -168,23 +106,19 @@ loadMarkets()
 
 }
 
-async function buyYes(m){
+async function buyYes(id){
 
-if(!currentUser) return alert("login first")
+await supabase.rpc("buy_yes",{market_id:id})
 
-let cost=1
-
-await supabase
-.rpc("increment_yes",{market_id:m.id})
+loadMarkets()
 
 }
 
-async function buyNo(m){
+async function buyNo(id){
 
-if(!currentUser) return alert("login first")
+await supabase.rpc("buy_no",{market_id:id})
 
-await supabase
-.rpc("increment_no",{market_id:m.id})
+loadMarkets()
 
 }
 
@@ -198,6 +132,43 @@ render(data)
 
 }
 
+async function loadChart(marketId,canvasId){
+
+let {data}=await supabase
+.from("price_history")
+.select("*")
+.eq("market_id",marketId)
+.order("created_at",{ascending:true})
+
+let prices=data.map(d=>d.price*100)
+
+let labels=data.map((_,i)=>i+1)
+
+new Chart(
+document.getElementById(canvasId),
+{
+type:'line',
+data:{
+labels:labels,
+datasets:[{
+label:"YES Price %",
+data:prices,
+borderColor:"lime",
+fill:false
+}]
+},
+options:{
+scales:{
+y:{
+min:0,
+max:100
+}
+}
+}
+})
+
+}
+
 function render(markets){
 
 let div=document.getElementById("markets")
@@ -207,8 +178,9 @@ div.innerHTML=""
 markets.forEach(m=>{
 
 let pYes=price(m.yes_shares,m.no_shares)
-
 let pNo=1-pYes
+
+let canvasId="chart"+m.id
 
 div.innerHTML+=`
 
@@ -217,51 +189,29 @@ div.innerHTML+=`
 <h3>${m.question}</h3>
 
 <p>
-
 YES ${(pYes*100).toFixed(1)}%
-
 |
-
 NO ${(pNo*100).toFixed(1)}%
-
 </p>
 
-<button class="yes" onclick='buyYes(${JSON.stringify(m)})'>Buy YES</button>
+<button class="yes" onclick="buyYes(${m.id})">Buy YES</button>
+<button class="no" onclick="buyNo(${m.id})">Buy NO</button>
 
-<button class="no" onclick='buyNo(${JSON.stringify(m)})'>Buy NO</button>
+<canvas id="${canvasId}" height="120"></canvas>
 
 </div>
 
 `
 
-})
-
-loadLeaderboard()
-
-}
-
-async function loadLeaderboard(){
-
-let {data}=await supabase
-.from("users")
-.select("*")
-.order("balance",{ascending:false})
-
-let html=""
-
-data.forEach(u=>{
-
-html+=u.name+" — $"+u.balance.toFixed(2)+"<br>"
+setTimeout(()=>loadChart(m.id,canvasId),100)
 
 })
-
-document.getElementById("leaders").innerHTML=html
 
 }
 
 loadMarkets()
 
-setInterval(loadMarkets,2000)
+setInterval(loadMarkets,3000)
 
 </script>
 
