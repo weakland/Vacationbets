@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+
+<title>Vacation Prediction Market</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+
+body{
+background:#343541;
+color:white;
+font-family:Arial;
+display:flex;
+justify-content:center;
+}
+
+.container{
+width:900px;
+margin-top:40px;
+}
+
+.market{
+background:#444654;
+padding:20px;
+border-radius:8px;
+margin-bottom:20px;
+}
+
+button{
+padding:6px 12px;
+margin:5px;
+border:none;
+border-radius:6px;
+cursor:pointer;
+}
+
+.yes{background:#16a34a}
+.no{background:#dc2626}
+.resolve{background:#3b82f6}
+
+input{
+padding:10px;
+border-radius:6px;
+border:none;
+}
+
+.wallet{
+background:#444654;
+padding:15px;
+border-radius:8px;
+margin-bottom:20px;
+}
+
+.leaderboard{
+background:#444654;
+padding:15px;
+border-radius:8px;
+margin-top:20px;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>🏝 Vacation Prediction Market</h1>
+
+<div class="wallet">
+
+<input id="username" placeholder="Enter name">
+<button onclick="login()">Join</button>
+
+<p id="balance"></p>
+
+</div>
+
+<div>
+
+<input id="question" placeholder="Create a market">
+<button onclick="createMarket()">Create Market</button>
+
+</div>
+
+<div id="markets"></div>
+
+<div class="leaderboard">
+
+<h3>Leaderboard</h3>
+
+<div id="leaders"></div>
+
+</div>
+
+</div>
+
+<script>
+
+const supabase = window.supabase.createClient(
+"YOUR_SUPABASE_URL",
+"YOUR_SUPABASE_KEY"
+)
+
+const b=20
+
+let currentUser=null
+
+function price(yes,no){
+
+let ey=Math.exp(yes/b)
+let en=Math.exp(no/b)
+
+return ey/(ey+en)
+
+}
+
+async function login(){
+
+let name=document.getElementById("username").value
+
+currentUser=name
+
+let {data}=await supabase
+.from("users")
+.select("*")
+.eq("name",name)
+
+if(data.length===0){
+
+await supabase
+.from("users")
+.insert([{name:name}])
+
+}
+
+loadWallet()
+
+}
+
+async function loadWallet(){
+
+let {data}=await supabase
+.from("users")
+.select("*")
+.eq("name",currentUser)
+.single()
+
+document.getElementById("balance").innerText=
+currentUser+" balance: $"+data.balance.toFixed(2)
+
+}
+
+async function createMarket(){
+
+let q=document.getElementById("question").value
+
+await supabase
+.from("markets")
+.insert([{question:q}])
+
+document.getElementById("question").value=""
+
+loadMarkets()
+
+}
+
+async function buyYes(m){
+
+if(!currentUser) return alert("login first")
+
+let cost=1
+
+await supabase
+.rpc("increment_yes",{market_id:m.id})
+
+}
+
+async function buyNo(m){
+
+if(!currentUser) return alert("login first")
+
+await supabase
+.rpc("increment_no",{market_id:m.id})
+
+}
+
+async function loadMarkets(){
+
+let {data}=await supabase
+.from("markets")
+.select("*")
+
+render(data)
+
+}
+
+function render(markets){
+
+let div=document.getElementById("markets")
+
+div.innerHTML=""
+
+markets.forEach(m=>{
+
+let pYes=price(m.yes_shares,m.no_shares)
+
+let pNo=1-pYes
+
+div.innerHTML+=`
+
+<div class="market">
+
+<h3>${m.question}</h3>
+
+<p>
+
+YES ${(pYes*100).toFixed(1)}%
+
+|
+
+NO ${(pNo*100).toFixed(1)}%
+
+</p>
+
+<button class="yes" onclick='buyYes(${JSON.stringify(m)})'>Buy YES</button>
+
+<button class="no" onclick='buyNo(${JSON.stringify(m)})'>Buy NO</button>
+
+</div>
+
+`
+
+})
+
+loadLeaderboard()
+
+}
+
+async function loadLeaderboard(){
+
+let {data}=await supabase
+.from("users")
+.select("*")
+.order("balance",{ascending:false})
+
+let html=""
+
+data.forEach(u=>{
+
+html+=u.name+" — $"+u.balance.toFixed(2)+"<br>"
+
+})
+
+document.getElementById("leaders").innerHTML=html
+
+}
+
+loadMarkets()
+
+setInterval(loadMarkets,2000)
+
+</script>
+
+</body>
+</html>
